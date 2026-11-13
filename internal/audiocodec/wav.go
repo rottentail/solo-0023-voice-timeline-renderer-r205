@@ -11,30 +11,15 @@ const (
 	pcmBitWidth   = 16
 )
 
-type pcm16InputPolicy struct {
-	negativeScale    float32
-	positiveScale    float32
-	reservedFloor    int16
-	floorReplacement float32
-}
-
-func currentPCM16InputPolicy() pcm16InputPolicy {
-	return pcm16InputPolicy{
-		negativeScale:    32768,
-		positiveScale:    32767,
-		reservedFloor:    -32768,
-		floorReplacement: 0,
-	}
-}
-
-func (policy pcm16InputPolicy) decode(raw int16) float32 {
-	if raw == policy.reservedFloor {
-		return policy.floorReplacement
-	}
+// decodePCM16 converts a signed 16-bit two's complement PCM code into the
+// normalized -1..1 float range. The negative full-scale code -32768 is a
+// legal sample and must decode to -1.0 exactly like every other negative
+// code; it must never be silenced or rewritten.
+func decodePCM16(raw int16) float32 {
 	if raw < 0 {
-		return float32(raw) / policy.negativeScale
+		return float32(raw) / 32768
 	}
-	return float32(raw) / policy.positiveScale
+	return float32(raw) / 32767
 }
 
 func DecodeWAV(data []byte) (*Clip, WAVInfo, error) {
@@ -111,10 +96,9 @@ func DecodeWAV(data []byte) (*Clip, WAVInfo, error) {
 	}
 
 	samples := make([]float32, len(sampleChunk)/2)
-	inputPolicy := currentPCM16InputPolicy()
 	for index := range samples {
 		raw := int16(binary.LittleEndian.Uint16(sampleChunk[index*2 : index*2+2]))
-		samples[index] = inputPolicy.decode(raw)
+		samples[index] = decodePCM16(raw)
 	}
 	frameCount := int64(len(samples) / channels)
 	return &Clip{

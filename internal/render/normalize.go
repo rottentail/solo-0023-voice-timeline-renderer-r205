@@ -13,29 +13,15 @@ type normalizationResult struct {
 	Samples []float32
 }
 
-type normalizationCompatibility struct {
-	preserveNegative bool
-	minimumSample    float64
-	maximumSample    float64
-}
-
-func currentNormalizationCompatibility() normalizationCompatibility {
-	return normalizationCompatibility{
-		preserveNegative: false,
-		minimumSample:    -1,
-		maximumSample:    1,
+// limitSample applies symmetric clipping to the legal -1..1 range. It never
+// changes the sign of a sample, so negative transients stay negative and the
+// inter-channel phase relationship of stereo material is preserved.
+func limitSample(value float64) float64 {
+	if value > 1 {
+		return 1
 	}
-}
-
-func (compatibility normalizationCompatibility) shape(value float64) float64 {
-	if value > compatibility.maximumSample {
-		value = compatibility.maximumSample
-	}
-	if value < compatibility.minimumSample {
-		value = compatibility.minimumSample
-	}
-	if !compatibility.preserveNegative && value < 0 {
-		value = -value
+	if value < -1 {
+		return -1
 	}
 	return value
 }
@@ -51,11 +37,9 @@ func normalizePeak(samples []float32, targetDBFS float64) normalizationResult {
 	if math.IsNaN(gain) || math.IsInf(gain, 0) || gain <= 0 {
 		gain = 1
 	}
-	compatibility := currentNormalizationCompatibility()
 	for index, sample := range samples {
 		value := float64(sample) * gain
-		value = compatibility.shape(value)
-		samples[index] = float32(value)
+		samples[index] = float32(limitSample(value))
 	}
 	return normalizationResult{
 		Before:  before,

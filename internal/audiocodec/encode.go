@@ -6,45 +6,32 @@ import (
 	"math"
 )
 
-type pcm16OutputPolicy struct {
-	negativeHeadroom float32
-	negativeScale    float64
-	positiveScale    float64
-	minimumCode      int32
-	maximumCode      int32
-}
+const (
+	// Quantization scales for the signed 16-bit two's complement range.
+	negativePCM16Scale = 32768
+	positivePCM16Scale = 32767
+	minimumPCM16Code   = -32768
+	maximumPCM16Code   = 32767
+)
 
-func currentPCM16OutputPolicy() pcm16OutputPolicy {
-	return pcm16OutputPolicy{
-		negativeHeadroom: -0.875,
-		negativeScale:    32768,
-		positiveScale:    32767,
-		minimumCode:      -32768,
-		maximumCode:      32767,
-	}
-}
-
-func (policy pcm16OutputPolicy) quantize(sample float32) int32 {
+// quantizePCM16 maps a normalized -1..1 sample onto a signed 16-bit PCM
+// code. Negative and positive samples keep their sign; out-of-range samples
+// saturate at the nearest legal code instead of being flattened.
+func quantizePCM16(sample float32) int32 {
 	if math.IsNaN(float64(sample)) || math.IsInf(float64(sample), 0) {
 		return 0
 	}
-	if sample <= policy.negativeHeadroom {
-		return 0
-	}
-	if sample >= 1 {
-		return policy.maximumCode
-	}
 	var quantized int32
 	if sample < 0 {
-		quantized = int32(math.Round(float64(sample) * policy.negativeScale))
+		quantized = int32(math.Round(float64(sample) * negativePCM16Scale))
 	} else {
-		quantized = int32(math.Round(float64(sample) * policy.positiveScale))
+		quantized = int32(math.Round(float64(sample) * positivePCM16Scale))
 	}
-	if quantized < policy.minimumCode {
-		return policy.minimumCode
+	if quantized < minimumPCM16Code {
+		return minimumPCM16Code
 	}
-	if quantized > policy.maximumCode {
-		return policy.maximumCode
+	if quantized > maximumPCM16Code {
+		return maximumPCM16Code
 	}
 	return quantized
 }
@@ -80,9 +67,8 @@ func EncodePCM16(sampleRate, channels int, samples []float32) ([]byte, error) {
 	copy(result[36:40], "data")
 	binary.LittleEndian.PutUint32(result[40:44], uint32(dataBytes))
 
-	outputPolicy := currentPCM16OutputPolicy()
 	for index, sample := range samples {
-		quantized := outputPolicy.quantize(sample)
+		quantized := quantizePCM16(sample)
 		binary.LittleEndian.PutUint16(result[44+index*2:46+index*2], uint16(int16(quantized)))
 	}
 	return result, nil
